@@ -74,6 +74,11 @@
       color: #666;
       margin-top: 0.4rem;
     }
+    .warning {
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: #a33;
+    }
   </style>
 </head>
 <body>
@@ -87,37 +92,83 @@
     <div class="buttons">
       <button id="startBtn" class="primary">🎙️ Start Dictation</button>
       <button id="stopBtn" disabled>⏹️ Stop</button>
+      <button id="permBtn">🔓 Request Mic Access</button>
       <button id="timestampBtn">⏱️ Insert Timestamp</button>
       <button id="copyBtn">📋 Copy All</button>
       <button id="downloadBtn">⬇️ Download .txt</button>
       <button id="clearBtn" class="danger">🧹 Clear</button>
     </div>
 
-    <textarea id="notes" placeholder="Your dictated notes will appear here..."></textarea>
+    <textarea id="notes" placeholder="You can also use your keyboard’s microphone button here if speech recognition is not supported."></textarea>
     <div class="hint">
       • Your notes are saved in this browser only (local storage).<br />
       • You can copy or download them and share them later.
     </div>
+    <div class="warning" id="warningMsg"></div>
   </div>
 
   <script>
-    const notesEl = document.getElementById("notes");
-    const micStatusEl = document.getElementById("micStatus");
-    const supportStatusEl = document.getElementById("supportStatus");
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const timestampBtn = document.getElementById("timestampBtn");
-    const copyBtn = document.getElementById("copyBtn");
-    const downloadBtn = document.getElementById("downloadBtn");
-    const clearBtn = document.getElementById("clearBtn");
+    (function () {
+      const notesEl = document.getElementById("notes");
+      const micStatusEl = document.getElementById("micStatus");
+      const supportStatusEl = document.getElementById("supportStatus");
+      const warningMsgEl = document.getElementById("warningMsg");
 
-    const SAVED_KEY = "voice_note_pad_notes";
-    const saved = localStorage.getItem(SAVED_KEY);
-    if (saved) notesEl.value = saved;
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const permBtn = document.getElementById("permBtn");
+      const timestampBtn = document.getElementById("timestampBtn");
+      const copyBtn = document.getElementById("copyBtn");
+      const downloadBtn = document.getElementById("downloadBtn");
+      const clearBtn = document.getElementById("clearBtn");
 
-    function saveNotes() {
-      localStorage.setItem(SAVED_KEY, notesEl.value || "");
-    }
-    notesEl.addEventListener("input", saveNotes);
+      // Load saved notes from localStorage
+      const SAVED_KEY = "voice_note_pad_notes";
+      try {
+        const saved = localStorage.getItem(SAVED_KEY);
+        if (saved) notesEl.value = saved;
+      } catch (e) {
+        console.warn("LocalStorage not available", e);
+      }
 
-    window.SpeechRecognition = window.S
+      function saveNotes() {
+        try {
+          localStorage.setItem(SAVED_KEY, notesEl.value || "");
+        } catch (e) {
+          console.warn("Failed to save notes", e);
+        }
+      }
+      notesEl.addEventListener("input", saveNotes);
+
+      // Speech recognition setup with safety
+      let recognition = null;
+      let recognizing = false;
+
+      const hasSpeechRecognition =
+        "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+
+      if (!hasSpeechRecognition) {
+        supportStatusEl.textContent = "Speech recognition NOT supported in this browser.";
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+        warningMsgEl.textContent =
+          "No problem: you can still tap into the text box and use your phone keyboard’s microphone button to dictate. This app will still auto-save, timestamp, and export your notes.";
+      } else {
+        supportStatusEl.textContent = "Speech recognition supported.";
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        try {
+          recognition = new SR();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = "en-US";
+
+          recognition.onstart = function () {
+            recognizing = true;
+            micStatusEl.textContent = "Listening...";
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+          };
+
+          recognition.onend = function () {
+            recognizing = false;
+            micStatusEl.textContent = "Stopped";
